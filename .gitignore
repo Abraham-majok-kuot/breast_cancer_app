@@ -5,6 +5,13 @@
 .pub/
 build/
 
+# Web
+web/.dart_tool/
+web/.packages
+web/.pub-cache/
+web/.pub/
+web/build/
+
 # IDEs
 .idea/
 .vscode/

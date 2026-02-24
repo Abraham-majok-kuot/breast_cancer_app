@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
-import 'core/routes.dart';
-import 'core/theme.dart';
+import 'app.dart';
+import 'app_routes/routes.dart';
+import 'core/theme/theme.dart';
+
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -17,3 +24,4 @@ class MyApp extends StatelessWidget {
     );
   }
 }
+
