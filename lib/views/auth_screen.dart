@@ -32,7 +32,7 @@ class AuthScreen extends StatelessWidget {
                   children: [
                     Row(
                       children: const [
-                        Icon(Icons.ribbon, color: Colors.pinkAccent),
+                        Icon(Icons.local_hospital, color: Colors.pinkAccent),
                         SizedBox(width: 8),
                         Text(
                           'Early Detection Saves Lives',
@@ -55,7 +55,7 @@ class AuthScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Take a quick assessment to understand your risk '
+                      'Take a quick assessment to understand your risk'
                       'factors and get personalized recommendations.',
                       style: TextStyle(
                         color: Colors.white70,
