@@ -23,3 +23,11 @@ web/build/
 .DS_Store
 Thumbs.db
 *~
+ Chrome device data
+.dart_tool/chrome-device/
+
+# Claude Code
+.claude/
+
+# Firebase
+google-services.json

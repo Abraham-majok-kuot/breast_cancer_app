@@ -1,19 +1,623 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../core/app_localizations.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        centerTitle: true,
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final User? _user = FirebaseAuth.instance.currentUser;
+  String _displayName = '';
+  String? _photoUrl;
+  bool _uploadingPhoto = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      if (_user == null) return;
+      await _user.reload();
+      final refreshed = FirebaseAuth.instance.currentUser;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_user.uid)
+          .get();
+      if (!mounted) return;
+      setState(() {
+        _displayName = doc.data()?['name'] ??
+            refreshed?.displayName ??
+            _user.email?.split('@')[0] ??
+            'User';
+        _photoUrl = doc.data()?['photoUrl'] ?? refreshed?.photoURL;
+      });
+    } catch (e) {
+      setState(() {
+        _displayName = _user?.displayName ??
+            _user?.email?.split('@')[0] ??
+            'User';
+        _photoUrl = _user?.photoURL;
+      });
+    }
+  }
+
+  Future<void> _changeProfilePhoto() async {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Update Profile Photo',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE91E8C).withValues(alpha: .1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.camera_alt_outlined, color: Color(0xFFE91E8C)),
+              ),
+              title: const Text('Take Photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7C4DFF).withValues(alpha: .1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.photo_library_outlined, color: Color(0xFF7C4DFF)),
+              ),
+              title: const Text('Choose from Gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+            if (_photoUrl != null)
+              ListTile(
+                leading: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.delete_outline, color: Colors.red),
+                ),
+                title: const Text('Remove Photo', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _removePhoto();
+                },
+              ),
+          ],
+        ),
       ),
-      body: const Center(
-        child: Text(
-          'Welcome to Health Journey!',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        imageQuality: 40,
+        maxWidth: 200,
+        maxHeight: 200,
+      );
+      if (picked == null) return;
+
+      setState(() => _uploadingPhoto = true);
+
+      final file = File(picked.path);
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('profile_photos')
+          .child('${_user!.uid}.jpg');
+
+      final metadata = SettableMetadata(contentType: 'image/jpeg');
+      await ref.putFile(file, metadata);
+      final downloadUrl = await ref.getDownloadURL();
+
+      await _user.updatePhotoURL(downloadUrl);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_user.uid)
+          .update({'photoUrl': downloadUrl});
+
+      setState(() {
+        _photoUrl = downloadUrl;
+        _uploadingPhoto = false;
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Profile photo updated!'),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    } catch (e) {
+      setState(() => _uploadingPhoto = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Failed to update photo. Try again.'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+    }
+  }
+
+  Future<void> _removePhoto() async {
+    try {
+      setState(() => _uploadingPhoto = true);
+      await _user!.updatePhotoURL(null);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_user.uid)
+          .update({'photoUrl': FieldValue.delete()});
+      setState(() {
+        _photoUrl = null;
+        _uploadingPhoto = false;
+      });
+    } catch (e) {
+      setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = context.l;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final firstName = _displayName.split(' ').first;
+
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFE91E8C), Color(0xFF7C4DFF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+
+                // ── Top Bar ──────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${l.hello}, $firstName 👋',
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white70),
+                          ),
+                          Text(l.welcomeBack,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Row(
+                      children: [
+                        // ── Newsletter bell icon ─────────────────
+                        GestureDetector(
+                          onTap: () => Navigator.pushNamed(context, '/newsletter'),
+                          child: Container(
+                            width: 42, height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.notifications_outlined,
+                                color: Colors.white, size: 22),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // ── Settings icon ────────────────────────
+                        GestureDetector(
+                          onTap: () => Navigator.pushNamed(context, '/settings'),
+                          child: Container(
+                            width: 42, height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: .2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.settings_outlined,
+                                color: Colors.white, size: 22),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // ── Profile avatar ───────────────────────
+                        GestureDetector(
+                          onTap: _changeProfilePhoto,
+                          child: Stack(
+                            children: [
+                              CircleAvatar(
+                                radius: 22,
+                                backgroundColor: Colors.white.withValues(alpha:0.2),
+                                backgroundImage: _photoUrl != null
+                                    ? NetworkImage(_photoUrl!) : null,
+                                child: _uploadingPhoto
+                                    ? const SizedBox(
+                                        width: 20, height: 20,
+                                        child: CircularProgressIndicator(
+                                            color: Colors.white, strokeWidth: 2))
+                                    : _photoUrl == null
+                                        ? Text(
+                                            firstName.isNotEmpty
+                                                ? firstName[0].toUpperCase() : 'U',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 18))
+                                        : null,
+                              ),
+                              Positioned(
+                                bottom: 0, right: 0,
+                                child: Container(
+                                  width: 16, height: 16,
+                                  decoration: const BoxDecoration(
+                                      color: Colors.white, shape: BoxShape.circle),
+                                  child: const Icon(Icons.camera_alt,
+                                      size: 10, color: Color(0xFFE91E8C)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ).animate().fadeIn().slideY(begin: -0.2),
+
+                const SizedBox(height: 32),
+
+                // ── Hero Card ─────────────────────────────────────
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha:0.15),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withValues(alpha:0.3)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.favorite, color: Colors.white, size: 56),
+                      const SizedBox(height: 16),
+                      Text(l.yourHealthJourney,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        l.earlyAwareness,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                            color: Colors.white70, height: 1.6),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pushNamed(context, '/input'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFFE91E8C),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text(l.startAssessment,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2),
+
+                const SizedBox(height: 28),
+
+                // ── Quick Actions ─────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(l.quickActions,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white, fontWeight: FontWeight.bold)),
+                    GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, '/history'),
+                      child: Text(l.seeAll,
+                          style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                    ),
+                  ],
+                ).animate().fadeIn(delay: 300.ms),
+
+                const SizedBox(height: 16),
+
+                // ── 6 action cards (added Newsletter) ────────────
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: screenWidth < 360 ? 1.1 : 1.3,
+                  children: [
+                    _ActionCard(
+                      icon: Icons.health_and_safety_outlined,
+                      label: l.newAssessment,
+                      color: Colors.pinkAccent,
+                      onTap: () => Navigator.pushNamed(context, '/input'),
+                    ),
+                    _ActionCard(
+                      icon: Icons.history_outlined,
+                      label: l.viewHistory,
+                      color: const Color(0xFF7C4DFF),
+                      onTap: () => Navigator.pushNamed(context, '/history'),
+                    ),
+                    _ActionCard(
+                      icon: Icons.menu_book_outlined,
+                      label: l.educationHub,
+                      color: const Color(0xFF00BCD4),
+                      onTap: () => Navigator.pushNamed(context, '/education'),
+                    ),
+                    _ActionCard(
+                      icon: Icons.campaign_outlined,
+                      label: l.newsletterUpdates,
+                      color: const Color(0xFFFF9800),
+                      onTap: () => Navigator.pushNamed(context, '/newsletter'),
+                    ),
+                    _ActionCard(
+                      icon: Icons.lock_reset_outlined,
+                      label: l.resetPassword,
+                      color: const Color(0xFFE91E8C),
+                      onTap: () => Navigator.pushNamed(context, '/reset-password'),
+                    ),
+                  ],
+                ).animate().fadeIn(delay: 400.ms),
+
+                const SizedBox(height: 28),
+
+                // ── Health Tips ───────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(l.healthTips,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white, fontWeight: FontWeight.bold)),
+                    GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, '/education'),
+                      child: Text(l.seeAll,
+                          style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                    ),
+                  ],
+                ).animate().fadeIn(delay: 500.ms),
+
+                const SizedBox(height: 12),
+
+                _TipCard(
+                  icon: Icons.directions_run_outlined,
+                  tip: 'Exercise at least 150 minutes per week to reduce risk.',
+                  delay: 550,
+                  onTap: () => Navigator.pushNamed(context, '/education'),
+                ),
+                _TipCard(
+                  icon: Icons.no_drinks_outlined,
+                  tip: 'Limit alcohol consumption to lower breast cancer risk.',
+                  delay: 600,
+                  onTap: () => Navigator.pushNamed(context, '/education'),
+                ),
+                _TipCard(
+                  icon: Icons.self_improvement_outlined,
+                  tip: 'Do a self-exam every month to detect early changes.',
+                  delay: 650,
+                  onTap: () => Navigator.pushNamed(context, '/education'),
+                ),
+
+                const SizedBox(height: 28),
+
+                // ── Bottom Links ──────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: _BottomLinkButton(
+                        icon: Icons.history_outlined,
+                        label: l.myHistory,
+                        onTap: () => Navigator.pushNamed(context, '/history'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _BottomLinkButton(
+                        icon: Icons.campaign_outlined,
+                        label: l.newsletter,
+                        onTap: () => Navigator.pushNamed(context, '/newsletter'),
+                      ),
+                    ),
+                  ],
+                ).animate().fadeIn(delay: 700.ms),
+
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Reusable Widgets ──────────────────────────────────────────────────────────
+
+class _ActionCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionCard({required this.icon, required this.label,
+      required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha:0.15),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha:0.25)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                  color: color.withValues(alpha:0.2), shape: BoxShape.circle),
+              child: Icon(icon, color: Colors.white, size: 20),
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: Text(label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w600,
+                  fontSize: 12, height: 1.3),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TipCard extends StatelessWidget {
+  final IconData icon;
+  final String tip;
+  final int delay;
+  final VoidCallback onTap;
+  const _TipCard({required this.icon, required this.tip,
+      required this.delay, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha:0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha:0.2)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: .15), shape: BoxShape.circle),
+              child: Icon(icon, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(tip,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 13, height: 1.5))),
+            const Icon(Icons.arrow_forward_ios,
+                color: Colors.white38, size: 14),
+          ],
+        ),
+      ),
+    ).animate()
+        .fadeIn(delay: Duration(milliseconds: delay))
+        .slideX(begin: 0.2);
+  }
+}
+
+class _BottomLinkButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _BottomLinkButton({required this.icon, required this.label,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha:0.15),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha:0.25)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Flexible(child: Text(label,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 13,
+                  fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis)),
+          ],
         ),
       ),
     );
