@@ -1,3 +1,4 @@
+import 'package:breast_cancer_app/views/analytics_screen.dart';
 import 'package:breast_cancer_app/views/newsletter_screen.dart';
 import 'package:flutter/material.dart';
 import '../views/splash_screen.dart';
@@ -25,6 +26,7 @@ class Routes {
   static const String education   = '/education';
   static const String history     = '/history';
   static const  String newsletter  = '/newsletter';
+  static const String analytics    = '/analytics';
   
 
   static final Map<String, WidgetBuilder> routes = {
@@ -40,5 +42,6 @@ class Routes {
     education:   (context) => const EducationScreen(),
     history:     (context) => const HistoryScreen(),
     newsletter: (context) => const NewsletterScreen(),
+    analytics: (context) => const AnalyticsScreen(),
   };
 }

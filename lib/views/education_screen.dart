@@ -300,6 +300,12 @@ Stay informed. Accurate information saves lives.''',
   }
 
   @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l = context.l;
 
@@ -318,8 +324,7 @@ Stay informed. Accurate information saves lives.''',
       ),
       body: Column(
         children: [
-
-          // Search + Categories header
+          // ── Search + category chips ──────────────────────────────────────
           Container(
             color: const Color(0xFFE91E8C),
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -337,10 +342,12 @@ Stay informed. Accurate information saves lives.''',
                     decoration: InputDecoration(
                       hintText: l.searchArticles,
                       hintStyle: TextStyle(color: Colors.grey.shade400),
-                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                      prefixIcon:
+                          const Icon(Icons.search, color: Colors.grey),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear, color: Colors.grey),
+                              icon:
+                                  const Icon(Icons.clear, color: Colors.grey),
                               onPressed: () {
                                 _searchCtrl.clear();
                                 setState(() => _searchQuery = '');
@@ -348,13 +355,12 @@ Stay informed. Accurate information saves lives.''',
                             )
                           : null,
                       border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      contentPadding:
+                          const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
                 // Category chips
                 SizedBox(
                   height: 36,
@@ -366,7 +372,8 @@ Stay informed. Accurate information saves lives.''',
                       final cat = _categories[i];
                       final selected = _selectedCategory == cat;
                       return GestureDetector(
-                        onTap: () => setState(() => _selectedCategory = cat),
+                        onTap: () =>
+                            setState(() => _selectedCategory = cat),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(
@@ -398,7 +405,7 @@ Stay informed. Accurate information saves lives.''',
             ),
           ),
 
-          // Article list
+          // ── Article list ─────────────────────────────────────────────────
           Expanded(
             child: _filteredArticles.isEmpty
                 ? Center(
@@ -409,7 +416,8 @@ Stay informed. Accurate information saves lives.''',
                             size: 64, color: Colors.grey.shade300),
                         const SizedBox(height: 12),
                         Text(l.noArticlesFound,
-                            style: TextStyle(color: Colors.grey.shade400)),
+                            style:
+                                TextStyle(color: Colors.grey.shade400)),
                       ],
                     ),
                   )
@@ -486,8 +494,8 @@ class _ArticleCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: article.color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
@@ -522,11 +530,35 @@ class _ArticleCard extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 11, color: Colors.grey.shade500),
                       ),
+                      const Spacer(),
+                      // ── "Read online" chip visible on card ───────────────
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: article.color.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.open_in_new,
+                                size: 10, color: article.color),
+                            const SizedBox(width: 3),
+                            Text('Read online',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: article.color,
+                                    fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             Icon(Icons.arrow_forward_ios,
                 size: 14, color: Colors.grey.shade400),
           ],
@@ -542,17 +574,102 @@ class _ArticleDetailScreen extends StatelessWidget {
   final _Article article;
   const _ArticleDetailScreen({required this.article});
 
+  // ── FIXED: real URL launcher logic ───────────────────────────────────────
+  // Uses Uri.parse + launchUrl with fallback modes.
+  // No longer relies on canLaunchUrl which needs a separate queries config.
   Future<void> _openUrl(BuildContext context) async {
     final uri = Uri.parse(article.url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open article link.')),
+    bool launched = false;
+
+    // Try 1: open in external browser (Chrome / default browser)
+    try {
+      launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      launched = false;
+    }
+
+    // Try 2: fall back to in-app WebView if external browser fails
+    if (!launched) {
+      try {
+        launched = await launchUrl(
+          uri,
+          mode: LaunchMode.inAppWebView,
+          webViewConfiguration: const WebViewConfiguration(
+            enableJavaScript: true,
+            enableDomStorage: true,
+          ),
         );
+      } catch (_) {
+        launched = false;
       }
     }
+
+    // Try 3: platform default (last resort)
+    if (!launched) {
+      try {
+        launched = await launchUrl(uri);
+      } catch (_) {
+        launched = false;
+      }
+    }
+
+    if (!launched && context.mounted) {
+      _showUrlFallbackDialog(context);
+    }
+  }
+
+  // Shows the URL in a dialog so user can copy it manually if all launch
+  // attempts fail (e.g. device has no browser installed).
+  void _showUrlFallbackDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.link, color: Color(0xFFE91E8C)),
+          SizedBox(width: 8),
+          Text('Open in Browser'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Could not open the browser automatically.\n'
+              'Copy the link below and paste it in your browser:',
+              style: TextStyle(fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                article.url,
+                style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFE91E8C)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE91E8C)),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK',
+                style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -568,14 +685,16 @@ class _ArticleDetailScreen extends StatelessWidget {
         title: Text(article.category,
             style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          // ── Open in browser icon ────────────────────────────────────────
           IconButton(
             icon: const Icon(Icons.open_in_new),
-            tooltip: l.readFullArticle,
+            tooltip: 'Read full article online',
             onPressed: () => _openUrl(context),
           ),
           IconButton(
             icon: const Icon(Icons.share_outlined),
-            onPressed: () {},
+            tooltip: 'Share',
+            onPressed: () => _openUrl(context), // shares by opening
           ),
         ],
       ),
@@ -583,7 +702,7 @@ class _ArticleDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header banner
+            // ── Header banner ───────────────────────────────────────────
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -636,15 +755,15 @@ class _ArticleDetailScreen extends StatelessWidget {
               ),
             ),
 
-            // Content
+            // ── Article content ─────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.all(20),
               child: _buildContent(article.content),
             ),
 
-            // Read Full Article button
+            // ── Read Full Article button ─────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -662,7 +781,26 @@ class _ArticleDetailScreen extends StatelessWidget {
               ),
             ),
 
-            // Footer tip
+            // ── Source label — shows which website it opens ──────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Row(
+                children: [
+                  Icon(Icons.link, size: 13, color: Colors.grey.shade400),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _extractDomain(article.url),
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey.shade400),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Tip footer ───────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
               child: Container(
@@ -679,7 +817,7 @@ class _ArticleDetailScreen extends StatelessWidget {
                     const SizedBox(width: 12),
                     const Expanded(
                       child: Text(
-                        'Knowledge is power. Share this article with someone who might benefit from it.',
+                        'Knowledge is power. Share this article with someone who might benefit.',
                         style: TextStyle(fontSize: 13, height: 1.5),
                       ),
                     ),
@@ -691,6 +829,16 @@ class _ArticleDetailScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // Extracts readable domain from URL for the source label
+  String _extractDomain(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.host.replaceFirst('www.', '');
+    } catch (_) {
+      return url;
+    }
   }
 
   Widget _buildContent(String content) {
@@ -717,12 +865,15 @@ class _ArticleDetailScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('• ',
-                    style: TextStyle(fontSize: 14, color: Colors.black54)),
+                    style:
+                        TextStyle(fontSize: 14, color: Colors.black54)),
                 Expanded(
                   child: Text(
                     line.substring(2),
                     style: const TextStyle(
-                        fontSize: 14, height: 1.6, color: Colors.black87),
+                        fontSize: 14,
+                        height: 1.6,
+                        color: Colors.black87),
                   ),
                 ),
               ],
