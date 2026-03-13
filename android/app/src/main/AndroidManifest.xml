@@ -14,12 +14,12 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- ✅ FCM default notification channel -->
+        <!-- FCM default notification channel -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="breastcare_channel"/>
 
-        <!-- ✅ FCM default notification icon and color -->
+        <!-- FCM default notification icon and color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher"/>
@@ -52,9 +52,26 @@
     </application>
 
     <queries>
+        <!-- Your original entry — kept as-is -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+
+        <!-- Added: required for url_launcher on Android 11+ (API 30+)     -->
+        <!-- Without these, launchUrl() silently does nothing on Android 11 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
+        <!-- Added: for mailto: links (email support button in settings) -->
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="mailto"/>
         </intent>
     </queries>
 
