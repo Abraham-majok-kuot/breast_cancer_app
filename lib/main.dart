@@ -21,11 +21,13 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // React to theme changes immediately
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: AppSettings.instance.themeMode,
       builder: (_, themeMode, __) {
         return MaterialApp(
+          // ── Navigator key — required for notification tap navigation ──
+          navigatorKey: NotificationService.navigatorKey,
+
           title: 'Breast Cancer Prediction',
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
@@ -33,6 +35,7 @@ class MyApp extends StatelessWidget {
           initialRoute: Routes.splash,
           routes: Routes.routes,
           debugShowCheckedModeBanner: false,
+
           // Provide translations + RTL to every route via the builder
           builder: (ctx, child) {
             return ValueListenableBuilder<String>(

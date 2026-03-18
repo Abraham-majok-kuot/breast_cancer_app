@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../core/app_localizations.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -190,6 +192,112 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
     } catch (e) {
       setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  Future<void> _exportData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: const Row(children: [
+          CircularProgressIndicator(color: Color(0xFFE91E8C)),
+          SizedBox(width: 16),
+          Expanded(child: Text('Exporting your data…')),
+        ]),
+      ),
+    );
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users').doc(user.uid).get();
+      final assessmentsSnap = await FirebaseFirestore.instance
+          .collection('users').doc(user.uid)
+          .collection('assessments')
+          .orderBy('createdAt', descending: false)
+          .get();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      if (assessmentsSnap.docs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No assessment data to export yet.'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ));
+        return;
+      }
+
+      final now = DateTime.now();
+      final buffer = StringBuffer();
+      buffer.writeln('='.padRight(60, '='));
+      buffer.writeln('  BREASTCARE AI — HEALTH DATA EXPORT');
+      buffer.writeln('='.padRight(60, '='));
+      buffer.writeln('Exported: ${now.day}/${now.month}/${now.year}');
+      buffer.writeln();
+      buffer.writeln('USER PROFILE');
+      buffer.writeln('-'.padRight(40, '-'));
+      buffer.writeln('Name  : ${userDoc.data()?['name'] ?? user.displayName ?? 'N/A'}');
+      buffer.writeln('Email : ${user.email ?? 'N/A'}');
+      buffer.writeln();
+
+      final total = assessmentsSnap.docs.length;
+      int low = 0, mod = 0, high = 0;
+      for (final doc in assessmentsSnap.docs) {
+        final risk = ((doc.data()['riskLevel'] as String?) ?? '').toLowerCase();
+        if (risk.contains('low')) low++;
+        else if (risk.contains('high')) high++;
+        else mod++;
+      }
+      buffer.writeln('SUMMARY');
+      buffer.writeln('-'.padRight(40, '-'));
+      buffer.writeln('Total: $total  |  Low: $low  |  Moderate: $mod  |  High: $high');
+      buffer.writeln();
+      buffer.writeln('DETAILED RECORDS');
+      buffer.writeln('-'.padRight(40, '-'));
+
+      for (int i = 0; i < assessmentsSnap.docs.length; i++) {
+        final data = assessmentsSnap.docs[i].data();
+        String dateStr = 'Unknown';
+        final rawDate = data['createdAt'];
+        if (rawDate is Timestamp) {
+          final dt = rawDate.toDate();
+          dateStr = '${dt.day}/${dt.month}/${dt.year}';
+        }
+        buffer.writeln();
+        buffer.writeln('Assessment #${i + 1}  ($dateStr)');
+        buffer.writeln('  Risk Level : ${data['riskLevel'] ?? 'N/A'}');
+        buffer.writeln('  Risk Score : ${data['riskScore'] != null ? '${(data['riskScore'] * 100).toStringAsFixed(1)}%' : 'N/A'}');
+      }
+
+      buffer.writeln();
+      buffer.writeln('='.padRight(60, '='));
+      buffer.writeln('END OF EXPORT — BreastCare AI');
+      buffer.writeln('='.padRight(60, '='));
+
+      final dir = await getTemporaryDirectory();
+      final fileName = 'BreastCareAI_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}.txt';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsString(buffer.toString());
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/plain')],
+        subject: 'BreastCare AI Health Data Export',
+        text: 'My BreastCare AI health data — $total assessment records',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      try { Navigator.pop(context); } catch (_) {}
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Export failed. Please try again.'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
     }
   }
 
@@ -386,6 +494,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ],
                   ),
                 ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2),
+
+                const SizedBox(height: 12),
+
+                // ── Export Data button ────────────────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _exportData(),
+                    icon: const Icon(Icons.download_outlined,
+                        color: Colors.white, size: 18),
+                    label: const Text('Export My Data',
+                        style: TextStyle(color: Colors.white, fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ).animate().fadeIn(delay: 250.ms),
 
                 const SizedBox(height: 28),
 

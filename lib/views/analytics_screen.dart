@@ -3,7 +3,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../core/app_localizations.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -614,7 +613,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       );
     }).toList();
 
-    String _shortLabel(String key) {
+    String shortLabel(String key) {
       // Shorten long key names for the x-axis
       final map = {
         'familyHistory': 'Family',
@@ -674,7 +673,7 @@ return map[key] ?? (key.length > 7 ? key.substring(0, 7) : key);
                       return Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          _shortLabel(keys[idx]),
+                          shortLabel(keys[idx]),
                           style: const TextStyle(
                               fontSize: 9, color: Colors.grey),
                         ),
@@ -903,7 +902,9 @@ class _AssessmentData {
     if (rawLevel.toLowerCase().contains('low')) level = 'Low';
     if (rawLevel.toLowerCase().contains('high')) level = 'High';
     if (rawLevel.toLowerCase().contains('moderate') ||
-        rawLevel.toLowerCase().contains('medium')) level = 'Moderate';
+        rawLevel.toLowerCase().contains('medium')) {
+      level = 'Moderate';
+    }
 
     // ── Risk score ──────────────────────────────────────────────────────────
     double score = 0.5;

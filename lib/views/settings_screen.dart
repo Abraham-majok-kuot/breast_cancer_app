@@ -992,16 +992,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                    5,
-                    (i) => IconButton(
-                          icon: Icon(
-                            i < stars ? Icons.star : Icons.star_border,
-                            color: Colors.amber,
-                            size: 32,
-                          ),
-                          onPressed: () => setS(() => stars = i + 1),
-                        )),
+                children: List.generate(5, (i) => GestureDetector(
+                  onTap: () => setS(() => stars = i + 1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(
+                      i < stars ? Icons.star : Icons.star_border,
+                      color: Colors.amber,
+                      size: 28,
+                    ),
+                  ),
+                )),
               ),
             ],
           ),

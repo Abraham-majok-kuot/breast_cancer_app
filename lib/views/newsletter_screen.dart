@@ -16,23 +16,18 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
   final _emailController = TextEditingController();
 
   // ── Subscription state ────────────────────────────────────────
-  bool _emailSubscribed     = false;
-  bool _pushSubscribed      = false;
-  bool _tipsPush            = true;
-  bool _articlesPush        = true;
-  bool _remindersPush       = false;
-  bool _isLoading           = true;
-  bool _isSaving            = false;
-
-  // ── Article feed (pulled from Firestore) ─────────────────────
-  List<Map<String, dynamic>> _articles = [];
-  bool _loadingArticles = true;
+  bool _emailSubscribed  = false;
+  bool _pushSubscribed   = false;
+  bool _tipsPush         = true;
+  bool _articlesPush     = true;
+  bool _remindersPush    = false;
+  bool _isLoading        = true;
+  bool _isSaving         = false;
 
   @override
   void initState() {
     super.initState();
     _loadPreferences();
-    _loadArticles();
   }
 
   @override
@@ -41,7 +36,7 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
     super.dispose();
   }
 
-  // ── Load saved preferences from Firestore ────────────────────
+  // ── Load preferences from Firestore ──────────────────────────
   Future<void> _loadPreferences() async {
     try {
       if (_user == null) return;
@@ -49,20 +44,17 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
           .collection('users')
           .doc(_user.uid)
           .get();
-
       final data = doc.data();
       if (!mounted) return;
       setState(() {
-        _emailSubscribed  = data?['newsletter']?['emailSubscribed'] ?? false;
-        _pushSubscribed   = data?['newsletter']?['pushSubscribed']  ?? false;
-        _tipsPush         = data?['newsletter']?['tipsPush']        ?? true;
-        _articlesPush     = data?['newsletter']?['articlesPush']    ?? true;
-        _remindersPush    = data?['newsletter']?['remindersPush']   ?? false;
-
-        final savedEmail  = data?['newsletter']?['email'] ?? '';
-        _emailController.text = savedEmail.isNotEmpty
-            ? savedEmail
-            : (_user.email ?? '');
+        _emailSubscribed = data?['newsletter']?['emailSubscribed'] ?? false;
+        _pushSubscribed  = data?['newsletter']?['pushSubscribed']  ?? false;
+        _tipsPush        = data?['newsletter']?['tipsPush']        ?? true;
+        _articlesPush    = data?['newsletter']?['articlesPush']    ?? true;
+        _remindersPush   = data?['newsletter']?['remindersPush']   ?? false;
+        final savedEmail = data?['newsletter']?['email'] ?? '';
+        _emailController.text =
+            savedEmail.isNotEmpty ? savedEmail : (_user.email ?? '');
         _isLoading = false;
       });
     } catch (e) {
@@ -73,58 +65,16 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
     }
   }
 
-  // ── Load articles from Firestore ─────────────────────────────
-  Future<void> _loadArticles() async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('newsletter_articles')
-          .orderBy('publishedAt', descending: true)
-          .limit(10)
-          .get();
-
-      if (!mounted) return;
-
-      if (snap.docs.isEmpty) {
-        // Show default articles if Firestore collection is empty
-        setState(() {
-          _articles = _defaultArticles();
-          _loadingArticles = false;
-        });
-        return;
-      }
-
-      setState(() {
-        _articles = snap.docs.map((d) => {
-          'title':       d['title'] ?? '',
-          'summary':     d['summary'] ?? '',
-          'category':    d['category'] ?? 'Tips',
-          'readTime':    d['readTime'] ?? '3 min read',
-          'publishedAt': d['publishedAt'],
-        }).toList();
-        _loadingArticles = false;
-      });
-    } catch (e) {
-      setState(() {
-        _articles = _defaultArticles();
-        _loadingArticles = false;
-      });
-    }
-  }
-
-  // ── Save preferences to Firestore + handle FCM ───────────────
+  // ── Save preferences ──────────────────────────────────────────
   Future<void> _savePreferences() async {
     if (_user == null) return;
-
     final email = _emailController.text.trim();
     if (_emailSubscribed && (email.isEmpty || !email.contains('@'))) {
       _showSnack('Please enter a valid email address', Colors.orange);
       return;
     }
-
     setState(() => _isSaving = true);
-
     try {
-      // Handle push notification subscription via FCM
       if (_pushSubscribed) {
         await NotificationService.subscribe(
           tips:      _tipsPush,
@@ -134,8 +84,6 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
       } else {
         await NotificationService.unsubscribeAll();
       }
-
-      // Save preferences to Firestore
       await FirebaseFirestore.instance
           .collection('users')
           .doc(_user.uid)
@@ -150,9 +98,6 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
           'updatedAt':       FieldValue.serverTimestamp(),
         }
       });
-
-      // If email subscribed, also save to newsletter_subscribers collection
-      // (used by Firebase Extension to send emails)
       if (_emailSubscribed && email.isNotEmpty) {
         await FirebaseFirestore.instance
             .collection('newsletter_subscribers')
@@ -166,15 +111,13 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
           'createdAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       } else {
-        // Unsubscribe — mark inactive
         await FirebaseFirestore.instance
             .collection('newsletter_subscribers')
             .doc(_user.uid)
             .set({'active': false}, SetOptions(merge: true));
       }
-
       setState(() => _isSaving = false);
-      _showSnack('Preferences saved successfully!', Colors.green);
+      _showSnack('Preferences saved!', Colors.green);
     } catch (e) {
       setState(() => _isSaving = false);
       _showSnack('Failed to save. Try again.', Colors.red);
@@ -191,53 +134,6 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
     ));
   }
 
-  // ── Default articles when Firestore is empty ─────────────────
-  List<Map<String, dynamic>> _defaultArticles() => [
-    {
-      'title': 'Understanding Your Breast Cancer Risk Factors',
-      'summary': 'Learn how age, family history, lifestyle, and hormonal factors '
-          'contribute to breast cancer risk and what you can do today.',
-      'category': 'Awareness',
-      'readTime': '5 min read',
-    },
-    {
-      'title': 'The Power of Monthly Self-Examination',
-      'summary': 'Regular breast self-exams are one of the most effective tools '
-          'for early detection. Here is a step-by-step guide.',
-      'category': 'Tips',
-      'readTime': '4 min read',
-    },
-    {
-      'title': 'How Exercise Reduces Breast Cancer Risk',
-      'summary': 'Research shows 150 minutes of moderate exercise per week can '
-          'reduce breast cancer risk by up to 20%. Find out why.',
-      'category': 'Health',
-      'readTime': '3 min read',
-    },
-    {
-      'title': 'Nutrition and Breast Cancer Prevention',
-      'summary': 'A Mediterranean-style diet rich in vegetables, fruits, and '
-          'whole grains is associated with lower breast cancer incidence.',
-      'category': 'Health',
-      'readTime': '6 min read',
-    },
-    {
-      'title': 'When Should You Get a Mammogram?',
-      'summary': 'Guidelines vary — we break down the recommendations by age '
-          'and risk level so you know exactly when to book your screening.',
-      'category': 'Awareness',
-      'readTime': '4 min read',
-    },
-    {
-      'title': 'Alcohol and Breast Cancer: What the Research Says',
-      'summary': 'Even moderate alcohol consumption increases risk. Understand '
-          'the science and make informed choices about your health.',
-      'category': 'Tips',
-      'readTime': '3 min read',
-    },
-  ];
-
-  // ── Category colour helper ────────────────────────────────────
   Color _categoryColor(String category) {
     switch (category) {
       case 'Awareness': return const Color(0xFFE91E8C);
@@ -260,7 +156,8 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
             style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFE91E8C)))
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFFE91E8C)))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -271,13 +168,13 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
                   _heroBanner().animate().fadeIn().slideY(begin: -0.1),
                   const SizedBox(height: 24),
 
-                  // ── Email subscription card ───────────────────
+                  // ── Email subscription ────────────────────────
                   _sectionTitle('📧 Email Newsletter'),
                   const SizedBox(height: 12),
                   _emailCard().animate().fadeIn(delay: 100.ms),
                   const SizedBox(height: 24),
 
-                  // ── Push notifications card ───────────────────
+                  // ── Push notifications ────────────────────────
                   _sectionTitle('🔔 Push Notifications'),
                   const SizedBox(height: 12),
                   _pushCard().animate().fadeIn(delay: 200.ms),
@@ -302,27 +199,118 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
                                   color: Colors.white, strokeWidth: 2))
                           : const Text('Save Preferences',
                               style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold)),
                     ),
                   ).animate().fadeIn(delay: 300.ms),
 
                   const SizedBox(height: 32),
 
-                  // ── Latest articles feed ──────────────────────
+                  // ── Latest articles — REAL-TIME from Firestore ─
                   _sectionTitle('📰 Latest Articles'),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Articles are published via notifications and Firestore',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
                   const SizedBox(height: 12),
-                  _loadingArticles
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                              color: Color(0xFFE91E8C)))
-                      : Column(
-                          children: _articles.asMap().entries.map((entry) {
-                            return _articleCard(entry.value, entry.key)
-                                .animate()
-                                .fadeIn(delay: Duration(milliseconds: 100 * entry.key))
-                                .slideX(begin: 0.1);
-                          }).toList(),
-                        ),
+
+                  // StreamBuilder keeps the feed live —
+                  // new articles appear the moment they are added
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('newsletter_articles')
+                        .orderBy('publishedAt', descending: true)
+                        .limit(20)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      // Loading
+                      if (snapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: CircularProgressIndicator(
+                                color: Color(0xFFE91E8C)),
+                          ),
+                        );
+                      }
+
+                      // Error
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              children: [
+                                const Icon(Icons.error_outline,
+                                    color: Colors.red, size: 40),
+                                const SizedBox(height: 8),
+                                const Text('Failed to load articles',
+                                    style:
+                                        TextStyle(color: Colors.grey)),
+                                TextButton(
+                                  onPressed: () => setState(() {}),
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      final docs = snapshot.data?.docs ?? [];
+
+                      // Empty — no articles yet
+                      if (docs.isEmpty) {
+                        return Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(Icons.article_outlined,
+                                  size: 48,
+                                  color: Colors.grey.shade300),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No articles yet',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15),
+                              ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                'New articles will appear here automatically '
+                                'when published via notifications.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 13,
+                                    height: 1.5),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // Articles list
+                      return Column(
+                        children: docs.asMap().entries.map((entry) {
+                          final data = entry.value.data()
+                              as Map<String, dynamic>;
+                          return _articleCard(data, entry.key)
+                              .animate()
+                              .fadeIn(
+                                  delay: Duration(
+                                      milliseconds: 80 * entry.key))
+                              .slideX(begin: 0.1);
+                        }).toList(),
+                      );
+                    },
+                  ),
 
                   const SizedBox(height: 24),
                 ],
@@ -331,7 +319,7 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
     );
   }
 
-  // ── Hero banner widget ────────────────────────────────────────
+  // ── Hero banner ───────────────────────────────────────────────
   Widget _heroBanner() {
     return Container(
       width: double.infinity,
@@ -349,21 +337,23 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Stay Informed,',
-                    style: TextStyle(
-                        color: Colors.white70, fontSize: 13)),
-                const Text('Stay Healthy',
+              children: const [
+                Text('Stay Informed,',
+                    style:
+                        TextStyle(color: Colors.white70, fontSize: 13)),
+                Text('Stay Healthy',
                     style: TextStyle(
                         color: Colors.white,
                         fontSize: 22,
                         fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                const Text(
+                SizedBox(height: 8),
+                Text(
                   'Get breast cancer awareness tips and\n'
                   'health articles delivered to you.',
                   style: TextStyle(
-                      color: Colors.white70, fontSize: 12, height: 1.5),
+                      color: Colors.white70,
+                      fontSize: 12,
+                      height: 1.5),
                 ),
               ],
             ),
@@ -382,7 +372,7 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
     );
   }
 
-  // ── Email subscription card ───────────────────────────────────
+  // ── Email card ────────────────────────────────────────────────
   Widget _emailCard() {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -390,13 +380,13 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.grey.withValues(alpha: .08), blurRadius: 8)
+          BoxShadow(
+              color: Colors.grey.withValues(alpha: .08), blurRadius: 8)
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Toggle row
           Row(
             children: [
               Container(
@@ -417,7 +407,8 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 15)),
                     Text('Awareness tips & health articles',
-                        style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        style:
+                            TextStyle(color: Colors.grey, fontSize: 12)),
                   ],
                 ),
               ),
@@ -428,8 +419,6 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
               ),
             ],
           ),
-
-          // Email input (visible when subscribed)
           if (_emailSubscribed) ...[
             const SizedBox(height: 16),
             const Divider(),
@@ -460,15 +449,15 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            // What they will receive
-            _infoChips(['Awareness Tips', 'Health Articles', 'Monthly Digest']),
+            _infoChips(
+                ['Awareness Tips', 'Health Articles', 'Monthly Digest']),
           ],
         ],
       ),
     );
   }
 
-  // ── Push notification card ────────────────────────────────────
+  // ── Push card ─────────────────────────────────────────────────
   Widget _pushCard() {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -476,12 +465,12 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.grey.withValues(alpha: .08), blurRadius: 8)
+          BoxShadow(
+              color: Colors.grey.withValues(alpha: .08), blurRadius: 8)
         ],
       ),
       child: Column(
         children: [
-          // Main toggle
           Row(
             children: [
               Container(
@@ -502,7 +491,8 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 15)),
                     Text('Receive alerts on your phone',
-                        style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        style:
+                            TextStyle(color: Colors.grey, fontSize: 12)),
                   ],
                 ),
               ),
@@ -513,8 +503,6 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
               ),
             ],
           ),
-
-          // Sub-toggles (visible when push is on)
           if (_pushSubscribed) ...[
             const SizedBox(height: 12),
             const Divider(),
@@ -573,7 +561,7 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
           Container(
             width: 34, height: 34,
             decoration: BoxDecoration(
-              color: color.withValues(alpha:0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: color, size: 17),
@@ -602,7 +590,7 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
     );
   }
 
-  // ── Article card widget ───────────────────────────────────────
+  // ── Article card ──────────────────────────────────────────────
   Widget _articleCard(Map<String, dynamic> article, int index) {
     final color = _categoryColor(article['category'] ?? 'Tips');
     return Container(
@@ -611,7 +599,8 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.grey.withValues(alpha:.08), blurRadius: 8)
+          BoxShadow(
+              color: Colors.grey.withValues(alpha: .08), blurRadius: 8)
         ],
       ),
       child: InkWell(
@@ -622,11 +611,10 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Category icon
               Container(
                 width: 48, height: 48,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha:0.1),
+                  color: color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
@@ -643,12 +631,11 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Category chip
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: color.withValues(alpha:.1),
+                        color: color.withValues(alpha: .1),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(article['category'] ?? 'Tips',
@@ -741,27 +728,27 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
               const SizedBox(height: 12),
               Text(article['title'] ?? '',
                   style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                       height: 1.3)),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.access_time,
-                      size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(article['readTime'] ?? '',
-                      style: const TextStyle(
-                          color: Colors.grey, fontSize: 13)),
-                ],
-              ),
+              Row(children: [
+                const Icon(Icons.access_time,
+                    size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(article['readTime'] ?? '',
+                    style: const TextStyle(
+                        color: Colors.grey, fontSize: 13)),
+              ]),
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 16),
               Text(article['summary'] ?? '',
                   style: const TextStyle(
-                      fontSize: 15, height: 1.7, color: Colors.black87)),
+                      fontSize: 15,
+                      height: 1.7,
+                      color: Colors.black87)),
               const SizedBox(height: 20),
-              // Placeholder body
               const Text(
                 'This content is provided for awareness purposes. '
                 'Always consult a qualified healthcare professional '
@@ -797,17 +784,25 @@ class _NewsletterScreenState extends State<NewsletterScreen> {
 
   Widget _sectionTitle(String title) => Text(title,
       style: const TextStyle(
-          fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87));
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.black87));
 
   Widget _infoChips(List<String> labels) => Wrap(
         spacing: 8,
-        children: labels.map((l) => Chip(
-          label: Text(l,
-              style: const TextStyle(fontSize: 11, color: Color(0xFFE91E8C))),
-          backgroundColor: const Color(0xFFE91E8C).withValues(alpha:0.08),
-          side: BorderSide(color: const Color(0xFFE91E8C).withValues(alpha:.3)),
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        )).toList(),
+        children: labels
+            .map((l) => Chip(
+                  label: Text(l,
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0xFFE91E8C))),
+                  backgroundColor:
+                      const Color(0xFFE91E8C).withValues(alpha: 0.08),
+                  side: BorderSide(
+                      color:
+                          const Color(0xFFE91E8C).withValues(alpha: .3)),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ))
+            .toList(),
       );
 }
