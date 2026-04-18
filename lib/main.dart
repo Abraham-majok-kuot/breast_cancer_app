@@ -6,6 +6,7 @@ import 'core/app_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'views/notification_service.dart';
+import 'views/ml_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +14,7 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await NotificationService.initialize();
+  await MLService.initialize(); // ← load TFLite model at startup
   runApp(const MyApp());
 }
 

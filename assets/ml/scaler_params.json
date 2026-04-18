@@ -1,0 +1,75 @@
+{
+  "feature_names": [
+    "age",
+    "bmi",
+    "familyHistory",
+    "hadBiopsy",
+    "breastfeeding",
+    "hormonalContraceptives",
+    "smoking",
+    "alcohol",
+    "exercise",
+    "diet"
+  ],
+  "n_features": 10,
+  "min": [
+    18.000721354832702,
+    15.001584807968904,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "max": [
+    79.98249574374009,
+    44.9851556912555,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "scale": [
+    0.016133774966257917,
+    0.0333515979098213,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "raw_min": {
+    "age": 18.0,
+    "bmi": 15.0,
+    "familyHistory": 0.0,
+    "hadBiopsy": 0.0,
+    "breastfeeding": 0.0,
+    "hormonalContraceptives": 0.0,
+    "smoking": 0.0,
+    "alcohol": 0.0,
+    "exercise": 0.0,
+    "diet": 0.0
+  },
+  "raw_max": {
+    "age": 80.0,
+    "bmi": 45.0,
+    "familyHistory": 1.0,
+    "hadBiopsy": 1.0,
+    "breastfeeding": 1.0,
+    "hormonalContraceptives": 1.0,
+    "smoking": 1.0,
+    "alcohol": 1.0,
+    "exercise": 1.0,
+    "diet": 1.0
+  }
+}

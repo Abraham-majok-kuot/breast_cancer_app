@@ -1,7 +1,38 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:http/io_client.dart';
+import 'package:dart_rss/dart_rss.dart';
 import '../core/app_localizations.dart';
+
+// ── RSS Feed Sources ───────────────────────────────────────────────────────────
+const List<_FeedSource> _feedSources = [
+  _FeedSource(
+    name: 'Breast Cancer News',
+    url: 'https://breastcancernews.com/feed/',
+    category: 'News',
+    color: Color(0xFFE91E8C),
+  ),
+  _FeedSource(
+    name: 'Science Daily',
+    url: 'https://www.sciencedaily.com/rss/health_medicine/breast_cancer.xml',
+    category: 'Research',
+    color: Color(0xFF7C4DFF),
+  ),
+  _FeedSource(
+    name: 'National Breast Cancer Foundation',
+    url: 'https://www.nationalbreastcancer.org/feed/',
+    category: 'Awareness',
+    color: Color(0xFF4CAF50),
+  ),
+  _FeedSource(
+    name: 'Susan G. Komen',
+    url: 'https://www.komen.org/feed/',
+    category: 'Prevention',
+    color: Color(0xFF00BCD4),
+  ),
+];
 
 class EducationScreen extends StatefulWidget {
   const EducationScreen({super.key});
@@ -10,16 +41,22 @@ class EducationScreen extends StatefulWidget {
   State<EducationScreen> createState() => _EducationScreenState();
 }
 
-class _EducationScreenState extends State<EducationScreen> {
+class _EducationScreenState extends State<EducationScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
   String _selectedCategory = 'All';
+  late TabController _tabController;
+
+  bool _loadingLive = true;
+  String? _liveError;
+  List<_LiveArticle> _liveArticles = [];
 
   final List<String> _categories = [
-    'All', 'Basics', 'Risk Factors', 'Self-Exam', 'Treatment', 'Prevention'
+    'All', 'News', 'Research', 'Awareness', 'Prevention',
   ];
 
-  final List<_Article> _articles = [
+  final List<_Article> _localArticles = [
     _Article(
       title: 'What is Breast Cancer?',
       category: 'Basics',
@@ -29,16 +66,11 @@ class _EducationScreenState extends State<EducationScreen> {
       url: 'https://www.cancer.org/cancer/types/breast-cancer/about/what-is-breast-cancer.html',
       content: '''Breast cancer occurs when cells in the breast grow out of control. These cells usually form a tumor that can often be seen on an x-ray or felt as a lump.
 
-The tumor is malignant (cancer) if the cells can grow into (invade) surrounding tissues or spread (metastasize) to distant areas of the body.
-
-Breast cancer occurs almost entirely in women, but men can get breast cancer too.
-
 **Types of Breast Cancer:**
 • Ductal Carcinoma In Situ (DCIS) – Non-invasive
 • Invasive Ductal Carcinoma – Most common type (80%)
 • Invasive Lobular Carcinoma – Second most common
 • Triple Negative Breast Cancer – Aggressive type
-• HER2-positive Breast Cancer
 
 **Key Statistics:**
 • 1 in 8 women will develop breast cancer in their lifetime
@@ -52,22 +84,16 @@ Breast cancer occurs almost entirely in women, but men can get breast cancer too
       color: Color(0xFFFF9800),
       readTime: '4 min read',
       url: 'https://www.cdc.gov/breast-cancer/signs-symptoms/index.html',
-      content: '''Knowing the warning signs of breast cancer is crucial for early detection. See a doctor immediately if you notice:
+      content: '''Knowing the warning signs of breast cancer is crucial for early detection.
 
 **Physical Changes:**
 • A new lump in the breast or underarm
 • Thickening or swelling of part of the breast
 • Irritation or dimpling of breast skin
-• Redness or flaky skin in the nipple area
-• Pulling in of the nipple or pain in the nipple area
-• Nipple discharge other than breast milk (including blood)
+• Nipple discharge other than breast milk
 • Any change in size or shape of the breast
-• Pain in any area of the breast
 
-**Remember:**
-Most lumps are NOT cancer — but any new lump should be checked by a doctor. Early detection is your best defense.
-
-Do not ignore changes even if a recent mammogram was normal.''',
+Most lumps are NOT cancer — but any new lump should be checked by a doctor.''',
     ),
     _Article(
       title: 'Risk Factors Explained',
@@ -76,28 +102,19 @@ Do not ignore changes even if a recent mammogram was normal.''',
       color: Color(0xFF7C4DFF),
       readTime: '5 min read',
       url: 'https://www.cancer.gov/types/breast/risk/understanding',
-      content: '''Understanding your risk factors helps you take proactive steps. Risk factors are divided into those you can and cannot control.
+      content: '''Understanding your risk factors helps you take proactive steps.
 
 **Factors You Cannot Control:**
-• Being a woman (99% of cases are female)
-• Increasing age (most cases occur after 50)
+• Being a woman
+• Increasing age
 • Family history of breast or ovarian cancer
-• Personal history of breast cancer or certain non-cancerous conditions
-• Dense breast tissue
-• Starting periods before age 12
-• Starting menopause after age 55
 • Inherited gene mutations (BRCA1, BRCA2)
 
 **Factors You CAN Control:**
-• Physical inactivity — exercise reduces risk by 10-20%
-• Being overweight or obese after menopause
-• Taking hormones (HRT or birth control pills)
-• Alcohol consumption — even 1 drink/day increases risk
-• Never having been pregnant
-• Not breastfeeding
-• Smoking
-
-Having risk factors does NOT mean you will get breast cancer. Many women with multiple risk factors never develop it, and many without risk factors do. Knowledge helps you make informed decisions.''',
+• Physical inactivity
+• Being overweight after menopause
+• Alcohol consumption
+• Smoking''',
     ),
     _Article(
       title: 'How to Do a Self-Exam',
@@ -106,35 +123,18 @@ Having risk factors does NOT mean you will get breast cancer. Many women with mu
       color: Color(0xFF4CAF50),
       readTime: '6 min read',
       url: 'https://www.nationalbreastcancer.org/breast-self-exam/',
-      content: '''A breast self-exam (BSE) is a simple check you can do at home. The best time is 3-5 days after your period starts when breasts are less tender.
+      content: '''A breast self-exam (BSE) is a simple check you can do at home.
 
 **Step 1 — In the Mirror**
-Stand with your arms at your sides. Look for:
-• Changes in size, shape, or color
-• Visible distortion or swelling
-• Dimpling, puckering, or bulging
-• Nipple changes or discharge
-Raise your arms and check again.
+Look for changes in size, shape, or color.
 
 **Step 2 — While Lying Down**
-• Lie down with right arm behind your head
-• Use the three middle fingers of your left hand
-• Use circular motions about the size of a coin
-• Cover the entire breast from armpit to sternum
-• Use light, medium, then firm pressure
-• Repeat for the left breast
+Use circular motions with three fingers, covering the entire breast.
 
-**Step 3 — While Standing/Sitting**
-• Many women find it easier to feel tissue when skin is wet
-• Check in the shower using the same technique
+**Step 3 — While Standing**
+Check in the shower using the same technique.
 
-**What to Feel For:**
-• Hard knot or lump
-• Areas that are thicker than others
-• Any change from your last exam
-
-**When to Do It:**
-Once a month, same time each month. Do not panic over every change — hormonal changes are normal. See your doctor if you notice persistent changes.''',
+Do this once a month, same time each month.''',
     ),
     _Article(
       title: 'Screening & Mammograms',
@@ -143,28 +143,12 @@ Once a month, same time each month. Do not panic over every change — hormonal 
       color: Color(0xFF00BCD4),
       readTime: '4 min read',
       url: 'https://www.cancer.org/cancer/types/breast-cancer/screening-tests-and-early-detection/mammograms.html',
-      content: '''Regular screening is the most powerful tool for early detection of breast cancer, often finding it before symptoms appear.
+      content: '''Regular screening is the most powerful tool for early detection.
 
-**Screening Guidelines (General):**
+**Guidelines:**
 • Ages 40-44: Option to start annual mammograms
 • Ages 45-54: Annual mammograms recommended
-• Ages 55+: Switch to every 2 years OR continue annually
-• High-risk women: May need MRI + mammogram starting at 30
-
-**What is a Mammogram?**
-A mammogram is an X-ray of the breast. It can detect tumors that are too small to feel. Modern digital mammograms are very accurate.
-
-**Other Screening Methods:**
-• Breast Ultrasound — used with mammograms for dense tissue
-• Breast MRI — for high-risk patients
-• 3D Mammogram (Tomosynthesis) — more detailed than standard
-• Clinical Breast Exam — done by a healthcare provider
-
-**Preparing for a Mammogram:**
-• Do not wear deodorant, perfume, or powder on the day
-• Wear a two-piece outfit for easy undressing
-• Tell the technician about any breast changes
-• Bring previous mammogram images for comparison
+• Ages 55+: Every 2 years or continue annually
 
 Early detection through screening reduces mortality by up to 30%.''',
     ),
@@ -175,37 +159,15 @@ Early detection through screening reduces mortality by up to 30%.''',
       color: Color(0xFFE91E8C),
       readTime: '5 min read',
       url: 'https://www.who.int/news-room/fact-sheets/detail/cancer',
-      content: '''While you cannot eliminate all risk, lifestyle changes can significantly lower your chance of developing breast cancer.
+      content: '''Lifestyle changes can significantly lower your chance of developing breast cancer.
 
-**Exercise Regularly:**
-• Aim for 150-300 minutes of moderate activity per week
-• Even 30 minutes of walking daily makes a difference
-• Exercise reduces estrogen levels and body fat
-
-**Maintain a Healthy Weight:**
-• Obesity after menopause increases risk by 20-40%
-• Excess fat tissue produces estrogen, fueling some cancers
-• Focus on sustainable healthy eating, not crash diets
-
-**Limit Alcohol:**
-• Each alcoholic drink per day increases risk by 7-10%
-• If you drink, limit to less than 1 drink per day
-• Red wine is NOT protective against breast cancer
-
-**Eat a Balanced Diet:**
-• Plenty of fruits, vegetables, and whole grains
-• Limit red meat and processed foods
-• Include omega-3 rich foods (fish, flaxseed, walnuts)
-• Cruciferous vegetables (broccoli, cabbage) may be protective
-
-**Other Steps:**
-• Quit smoking — linked to increased risk in younger women
-• Breastfeed if possible — reduces risk
-• Limit hormone replacement therapy
-• Avoid radiation exposure when possible
-• Manage stress through meditation, yoga, or counseling
-
-Small consistent changes add up to significant risk reduction over time.''',
+**Key Habits:**
+• Exercise 150-300 minutes per week
+• Maintain a healthy weight
+• Limit alcohol to less than 1 drink per day
+• Eat plenty of fruits, vegetables, and whole grains
+• Quit smoking
+• Breastfeed if possible''',
     ),
     _Article(
       title: 'Treatment Options Overview',
@@ -214,40 +176,15 @@ Small consistent changes add up to significant risk reduction over time.''',
       color: Color(0xFF7C4DFF),
       readTime: '7 min read',
       url: 'https://www.mayoclinic.org/diseases-conditions/breast-cancer/diagnosis-treatment/drc-20352475',
-      content: '''If breast cancer is diagnosed, several treatment options are available. The best treatment depends on the stage, type, and your overall health.
+      content: '''Several treatment options are available depending on the stage and type.
 
-**Surgery:**
-• Lumpectomy — removes only the tumor and small margin of tissue
-• Mastectomy — removes one or both breasts
-• Sentinel node biopsy — checks if cancer has spread to lymph nodes
-
-**Radiation Therapy:**
-• Uses high-energy rays to destroy cancer cells
-• Usually given after lumpectomy
-• Daily sessions over 3-6 weeks
-• Side effects: fatigue, skin changes
-
-**Chemotherapy:**
-• Uses drugs to kill cancer cells throughout the body
-• May be given before surgery (neoadjuvant) or after (adjuvant)
-• Side effects: hair loss, nausea, fatigue, infection risk
-
-**Hormone Therapy:**
-• For hormone receptor-positive cancers (ER+ or PR+)
-• Tamoxifen or aromatase inhibitors
-• Typically taken for 5-10 years
-• Reduces recurrence risk significantly
-
-**Targeted Therapy:**
-• For HER2-positive cancers (Herceptin/trastuzumab)
-• Specifically targets cancer cells while sparing normal cells
-
-**Immunotherapy:**
-• Helps your immune system fight cancer
-• Used for triple-negative breast cancer
-
-**Support During Treatment:**
-Remember that treatment is a journey. Support groups, counseling, and palliative care are all important parts of comprehensive cancer care.
+**Options:**
+• Surgery (Lumpectomy or Mastectomy)
+• Radiation Therapy
+• Chemotherapy
+• Hormone Therapy
+• Targeted Therapy (HER2-positive)
+• Immunotherapy (Triple-negative)
 
 Always discuss options thoroughly with your oncologist.''',
     ),
@@ -258,57 +195,166 @@ Always discuss options thoroughly with your oncologist.''',
       color: Color(0xFFFF9800),
       readTime: '3 min read',
       url: 'https://www.komen.org/breast-cancer/facts-statistics/myths-vs-facts/',
-      content: '''Many myths about breast cancer can cause unnecessary fear or false reassurance. Here are the facts:
+      content: '''Many myths about breast cancer cause unnecessary fear or false reassurance.
 
-**MYTH: Only women with a family history get breast cancer**
-FACT: 85% of women diagnosed have NO family history. All women are at risk.
+**MYTH:** Only women with family history get breast cancer
+**FACT:** 85% of women diagnosed have NO family history.
 
-**MYTH: Antiperspirants and deodorants cause breast cancer**
-FACT: No scientific evidence supports this claim.
+**MYTH:** A lump always means cancer
+**FACT:** 80% of lumps are benign. Always get checked.
 
-**MYTH: A lump always means cancer**
-FACT: 80% of lumps are benign (non-cancerous). Always get checked.
-
-**MYTH: Breast cancer only affects older women**
-FACT: While risk increases with age, young women can get breast cancer too.
-
-**MYTH: Mammograms cause cancer from radiation**
-FACT: The radiation dose is extremely low — much less than a chest X-ray.
-
-**MYTH: Small-breasted women have lower risk**
-FACT: Breast size does not affect cancer risk.
-
-**MYTH: If you have no symptoms, you are fine**
-FACT: Many breast cancers are detected before symptoms appear. Regular screening is essential.
-
-**MYTH: Men cannot get breast cancer**
-FACT: About 1% of breast cancer cases occur in men. Men should also check for lumps.
+**MYTH:** Men cannot get breast cancer
+**FACT:** About 1% of cases occur in men.
 
 Stay informed. Accurate information saves lives.''',
     ),
   ];
 
-  List<_Article> get _filteredArticles {
-    return _articles.where((a) {
-      final matchesSearch = _searchQuery.isEmpty ||
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _fetchLiveArticles();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // ── Fetch RSS feeds — bypasses SSL certificate errors ─────────
+  Future<void> _fetchLiveArticles() async {
+    setState(() {
+      _loadingLive = true;
+      _liveError = null;
+    });
+
+    // Create an HTTP client that accepts self-signed certificates
+    // This fixes CERTIFICATE_VERIFY_FAILED on some Android devices
+    final httpClient = HttpClient()
+      ..badCertificateCallback = (cert, host, port) => true;
+    final ioClient = IOClient(httpClient);
+
+    final List<_LiveArticle> fetched = [];
+    int successCount = 0;
+
+    for (final source in _feedSources) {
+      try {
+        final response = await ioClient.get(
+          Uri.parse(source.url),
+          headers: {'User-Agent': 'BreastCareAI/1.0'},
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200) {
+          final feed = RssFeed.parse(response.body);
+          for (final item in (feed.items ?? []).take(5)) {
+            final title = item.title?.trim() ?? '';
+            final description = _stripHtml(item.description ?? '');
+            final link = item.link ?? '';
+            final pubDate = item.pubDate ?? '';
+
+            if (title.isEmpty || link.isEmpty) continue;
+
+            fetched.add(_LiveArticle(
+              title: title,
+              summary: description.length > 200
+                  ? '${description.substring(0, 200)}...'
+                  : description,
+              url: link,
+              source: source.name,
+              category: source.category,
+              color: source.color,
+              pubDate: _formatDate(pubDate),
+            ));
+          }
+          successCount++;
+        }
+      } catch (e) {
+        debugPrint('[RSS] Failed to fetch ${source.name}: $e');
+      }
+    }
+
+    ioClient.close();
+
+    if (!mounted) return;
+    setState(() {
+      _liveArticles = fetched;
+      _loadingLive = false;
+      if (successCount == 0 && fetched.isEmpty) {
+        _liveError = 'Could not load live articles. Check your connection.';
+      }
+    });
+  }
+
+  String _stripHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .trim();
+  }
+
+  String _formatDate(String pubDate) {
+    try {
+      final dt = DateTime.parse(pubDate);
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      try {
+        final parts = pubDate.split(' ');
+        if (parts.length >= 4) return '${parts[1]} ${parts[2]} ${parts[3]}';
+      } catch (_) {}
+      return pubDate.length > 16 ? pubDate.substring(0, 16) : pubDate;
+    }
+  }
+
+  List<_Article> get _filteredLocalArticles {
+    return _localArticles.where((a) {
+      return _searchQuery.isEmpty ||
           a.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           a.content.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+  }
+
+  List<_LiveArticle> get _filteredLiveArticles {
+    return _liveArticles.where((a) {
+      final matchesSearch = _searchQuery.isEmpty ||
+          a.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          a.summary.toLowerCase().contains(_searchQuery.toLowerCase());
       final matchesCategory =
           _selectedCategory == 'All' || a.category == _selectedCategory;
       return matchesSearch && matchesCategory;
     }).toList();
   }
 
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
+  Future<void> _openUrl(BuildContext context, String url) async {
+    final uri = Uri.parse(url);
+    bool launched = false;
+    try {
+      launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (!launched) {
+      try {
+        launched = await launchUrl(uri, mode: LaunchMode.inAppWebView);
+      } catch (_) {}
+    }
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Could not open: $url'),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
@@ -321,138 +367,348 @@ Stay informed. Accurate information saves lives.''',
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh live articles',
+            onPressed: _fetchLiveArticles,
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          tabs: const [
+            Tab(icon: Icon(Icons.article_outlined), text: 'Live Articles'),
+            Tab(icon: Icon(Icons.menu_book_outlined), text: 'Health Guides'),
+          ],
+        ),
       ),
       body: Column(
         children: [
-          // ── Search + category chips ──────────────────────────────────────
           Container(
             color: const Color(0xFFE91E8C),
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              children: [
-                // Search bar
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TextField(
-                    controller: _searchCtrl,
-                    onChanged: (v) => setState(() => _searchQuery = v),
-                    decoration: InputDecoration(
-                      hintText: l.searchArticles,
-                      hintStyle: TextStyle(color: Colors.grey.shade400),
-                      prefixIcon:
-                          const Icon(Icons.search, color: Colors.grey),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon:
-                                  const Icon(Icons.clear, color: Colors.grey),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                            )
-                          : null,
-                      border: InputBorder.none,
-                      contentPadding:
-                          const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _searchQuery = v),
+                decoration: InputDecoration(
+                  hintText: l.searchArticles,
+                  hintStyle: TextStyle(color: Colors.grey.shade400),
+                  prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, color: Colors.grey),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                const SizedBox(height: 12),
-                // Category chips
-                SizedBox(
-                  height: 36,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _categories.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (_, i) {
-                      final cat = _categories[i];
-                      final selected = _selectedCategory == cat;
-                      return GestureDetector(
-                        onTap: () =>
-                            setState(() => _selectedCategory = cat),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            cat,
-                            style: TextStyle(
-                              color: selected
-                                  ? const Color(0xFFE91E8C)
-                                  : Colors.white,
-                              fontWeight: selected
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-
-          // ── Article list ─────────────────────────────────────────────────
           Expanded(
-            child: _filteredArticles.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.search_off,
-                            size: 64, color: Colors.grey.shade300),
-                        const SizedBox(height: 12),
-                        Text(l.noArticlesFound,
-                            style:
-                                TextStyle(color: Colors.grey.shade400)),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _filteredArticles.length,
-                    itemBuilder: (_, i) {
-                      final article = _filteredArticles[i];
-                      return _ArticleCard(
-                        article: article,
-                        delay: i * 80,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                _ArticleDetailScreen(article: article),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildLiveTab(),
+                _buildLocalTab(l),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildLiveTab() {
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: SizedBox(
+            height: 34,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final cat = _categories[i];
+                final selected = _selectedCategory == cat;
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedCategory = cat),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFFE91E8C)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      cat,
+                      style: TextStyle(
+                        color: selected
+                            ? Colors.white
+                            : Colors.grey.shade700,
+                        fontWeight: selected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        Expanded(
+          child: _loadingLive
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: Color(0xFFE91E8C)),
+                      SizedBox(height: 16),
+                      Text('Loading latest articles…',
+                          style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                )
+              : _liveError != null && _liveArticles.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.wifi_off,
+                                size: 64, color: Colors.grey.shade300),
+                            const SizedBox(height: 16),
+                            Text(_liveError!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.grey)),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: _fetchLiveArticles,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Try Again'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE91E8C),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : _filteredLiveArticles.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.search_off,
+                                  size: 64, color: Colors.grey.shade300),
+                              const SizedBox(height: 12),
+                              Text('No articles found',
+                                  style:
+                                      TextStyle(color: Colors.grey.shade400)),
+                            ],
+                          ),
+                        )
+                      : RefreshIndicator(
+                          color: const Color(0xFFE91E8C),
+                          onRefresh: _fetchLiveArticles,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _filteredLiveArticles.length,
+                            itemBuilder: (_, i) {
+                              final article = _filteredLiveArticles[i];
+                              return _LiveArticleCard(
+                                article: article,
+                                delay: i * 60,
+                                onTap: () => _openUrl(context, article.url),
+                              ).animate().fadeIn(
+                                  delay: Duration(milliseconds: i * 60));
+                            },
+                          ),
+                        ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocalTab(AppTranslations l) {
+    final filtered = _filteredLocalArticles;
+    return filtered.isEmpty
+        ? Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.search_off,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                Text(l.noArticlesFound,
+                    style: TextStyle(color: Colors.grey.shade400)),
+              ],
+            ),
+          )
+        : ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: filtered.length,
+            itemBuilder: (_, i) {
+              final article = filtered[i];
+              return _ArticleCard(
+                article: article,
+                delay: i * 80,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => _ArticleDetailScreen(
+                      article: article,
+                      openUrl: _openUrl,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+  }
 }
 
-// ── Article Card ──────────────────────────────────────────────────────────────
+// ── Live Article Card ─────────────────────────────────────────────────────────
+
+class _LiveArticleCard extends StatelessWidget {
+  final _LiveArticle article;
+  final int delay;
+  final VoidCallback onTap;
+  const _LiveArticleCard({
+    required this.article,
+    required this.delay,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.grey.withValues(alpha: 0.08),
+                blurRadius: 8,
+                spreadRadius: 2),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: article.color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(article.category,
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: article.color,
+                          fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(article.source,
+                      style:
+                          const TextStyle(fontSize: 10, color: Colors.grey),
+                      overflow: TextOverflow.ellipsis),
+                ),
+                if (article.pubDate.isNotEmpty)
+                  Text(article.pubDate,
+                      style:
+                          const TextStyle(fontSize: 10, color: Colors.grey)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(article.title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    height: 1.3),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 6),
+            if (article.summary.isNotEmpty)
+              Text(article.summary,
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.grey, height: 1.4),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: article.color.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: article.color.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.open_in_new,
+                          size: 12, color: article.color),
+                      const SizedBox(width: 4),
+                      Text('Read Full Article',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: article.color,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Local Article Card ────────────────────────────────────────────────────────
 
 class _ArticleCard extends StatelessWidget {
   final _Article article;
   final int delay;
   final VoidCallback onTap;
-
   const _ArticleCard({
     required this.article,
     required this.delay,
@@ -471,10 +727,9 @@ class _ArticleCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.08),
-              blurRadius: 8,
-              spreadRadius: 2,
-            ),
+                color: Colors.grey.withValues(alpha: 0.08),
+                blurRadius: 8,
+                spreadRadius: 2),
           ],
         ),
         child: Row(
@@ -500,38 +755,28 @@ class _ArticleCard extends StatelessWidget {
                       color: article.color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(
-                      article.category,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: article.color,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    child: Text(article.category,
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: article.color,
+                            fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    article.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(article.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
                   Row(
                     children: [
                       Icon(Icons.access_time,
                           size: 12, color: Colors.grey.shade400),
                       const SizedBox(width: 4),
-                      Text(
-                        article.readTime,
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade500),
-                      ),
+                      Text(article.readTime,
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.grey.shade500)),
                       const Spacer(),
-                      // ── "Read online" chip visible on card ───────────────
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
@@ -572,110 +817,15 @@ class _ArticleCard extends StatelessWidget {
 
 class _ArticleDetailScreen extends StatelessWidget {
   final _Article article;
-  const _ArticleDetailScreen({required this.article});
-
-  // ── FIXED: real URL launcher logic ───────────────────────────────────────
-  // Uses Uri.parse + launchUrl with fallback modes.
-  // No longer relies on canLaunchUrl which needs a separate queries config.
-  Future<void> _openUrl(BuildContext context) async {
-    final uri = Uri.parse(article.url);
-    bool launched = false;
-
-    // Try 1: open in external browser (Chrome / default browser)
-    try {
-      launched = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-    } catch (_) {
-      launched = false;
-    }
-
-    // Try 2: fall back to in-app WebView if external browser fails
-    if (!launched) {
-      try {
-        launched = await launchUrl(
-          uri,
-          mode: LaunchMode.inAppWebView,
-          webViewConfiguration: const WebViewConfiguration(
-            enableJavaScript: true,
-            enableDomStorage: true,
-          ),
-        );
-      } catch (_) {
-        launched = false;
-      }
-    }
-
-    // Try 3: platform default (last resort)
-    if (!launched) {
-      try {
-        launched = await launchUrl(uri);
-      } catch (_) {
-        launched = false;
-      }
-    }
-
-    if (!launched && context.mounted) {
-      _showUrlFallbackDialog(context);
-    }
-  }
-
-  // Shows the URL in a dialog so user can copy it manually if all launch
-  // attempts fail (e.g. device has no browser installed).
-  void _showUrlFallbackDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(children: [
-          Icon(Icons.link, color: Color(0xFFE91E8C)),
-          SizedBox(width: 8),
-          Text('Open in Browser'),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Could not open the browser automatically.\n'
-              'Copy the link below and paste it in your browser:',
-              style: TextStyle(fontSize: 13, height: 1.5),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                article.url,
-                style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFE91E8C)),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE91E8C)),
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK',
-                style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
+  final Future<void> Function(BuildContext, String) openUrl;
+  const _ArticleDetailScreen({
+    required this.article,
+    required this.openUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
@@ -685,16 +835,9 @@ class _ArticleDetailScreen extends StatelessWidget {
         title: Text(article.category,
             style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          // ── Open in browser icon ────────────────────────────────────────
           IconButton(
             icon: const Icon(Icons.open_in_new),
-            tooltip: 'Read full article online',
-            onPressed: () => _openUrl(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            tooltip: 'Share',
-            onPressed: () => _openUrl(context), // shares by opening
+            onPressed: () => openUrl(context, article.url),
           ),
         ],
       ),
@@ -702,14 +845,13 @@ class _ArticleDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header banner ───────────────────────────────────────────
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
               decoration: BoxDecoration(
                 color: article.color,
-                borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(28)),
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(28)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -721,53 +863,38 @@ class _ArticleDetailScreen extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: Icon(article.icon, color: Colors.white, size: 28),
+                    child:
+                        Icon(article.icon, color: Colors.white, size: 28),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    article.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      height: 1.3,
-                    ),
-                  ),
+                  Text(article.title,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3)),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.access_time,
-                          size: 14, color: Colors.white70),
-                      const SizedBox(width: 4),
-                      Text(article.readTime,
-                          style: const TextStyle(
-                              color: Colors.white70, fontSize: 12)),
-                      const SizedBox(width: 16),
-                      const Icon(Icons.local_library_outlined,
-                          size: 14, color: Colors.white70),
-                      const SizedBox(width: 4),
-                      const Text('Health Education',
-                          style: TextStyle(
-                              color: Colors.white70, fontSize: 12)),
-                    ],
-                  ),
+                  Row(children: [
+                    const Icon(Icons.access_time,
+                        size: 14, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(article.readTime,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 12)),
+                  ]),
                 ],
               ),
             ),
-
-            // ── Article content ─────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.all(20),
               child: _buildContent(article.content),
             ),
-
-            // ── Read Full Article button ─────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () => _openUrl(context),
+                  onPressed: () => openUrl(context, article.url),
                   icon: const Icon(Icons.open_in_new, size: 18),
                   label: Text(l.readFullArticle),
                   style: ElevatedButton.styleFrom(
@@ -780,27 +907,6 @@ class _ArticleDetailScreen extends StatelessWidget {
                 ),
               ),
             ),
-
-            // ── Source label — shows which website it opens ──────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: Row(
-                children: [
-                  Icon(Icons.link, size: 13, color: Colors.grey.shade400),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _extractDomain(article.url),
-                      style: TextStyle(
-                          fontSize: 11, color: Colors.grey.shade400),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Tip footer ───────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
               child: Container(
@@ -811,34 +917,22 @@ class _ArticleDetailScreen extends StatelessWidget {
                   border: Border.all(
                       color: article.color.withValues(alpha: 0.2)),
                 ),
-                child: Row(
-                  children: [
-                    Icon(Icons.lightbulb_outline, color: article.color),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Knowledge is power. Share this article with someone who might benefit.',
-                        style: TextStyle(fontSize: 13, height: 1.5),
-                      ),
+                child: Row(children: [
+                  Icon(Icons.lightbulb_outline, color: article.color),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Knowledge is power. Share this article with someone who might benefit.',
+                      style: TextStyle(fontSize: 13, height: 1.5),
                     ),
-                  ],
-                ),
+                  ),
+                ]),
               ),
             ),
           ],
         ),
       ),
     );
-  }
-
-  // Extracts readable domain from URL for the source label
-  String _extractDomain(String url) {
-    try {
-      final uri = Uri.parse(url);
-      return uri.host.replaceFirst('www.', '');
-    } catch (_) {
-      return url;
-    }
   }
 
   Widget _buildContent(String content) {
@@ -849,14 +943,11 @@ class _ArticleDetailScreen extends StatelessWidget {
         if (line.startsWith('**') && line.endsWith('**')) {
           return Padding(
             padding: const EdgeInsets.only(top: 16, bottom: 6),
-            child: Text(
-              line.replaceAll('**', ''),
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: Colors.black87,
-              ),
-            ),
+            child: Text(line.replaceAll('**', ''),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Colors.black87)),
           );
         } else if (line.startsWith('•')) {
           return Padding(
@@ -868,13 +959,11 @@ class _ArticleDetailScreen extends StatelessWidget {
                     style:
                         TextStyle(fontSize: 14, color: Colors.black54)),
                 Expanded(
-                  child: Text(
-                    line.substring(2),
-                    style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.6,
-                        color: Colors.black87),
-                  ),
+                  child: Text(line.substring(2),
+                      style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.6,
+                          color: Colors.black87)),
                 ),
               ],
             ),
@@ -884,11 +973,11 @@ class _ArticleDetailScreen extends StatelessWidget {
         } else {
           return Padding(
             padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              line,
-              style: const TextStyle(
-                  fontSize: 14, height: 1.7, color: Colors.black87),
-            ),
+            child: Text(line,
+                style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.7,
+                    color: Colors.black87)),
           );
         }
       }).toList(),
@@ -896,7 +985,39 @@ class _ArticleDetailScreen extends StatelessWidget {
   }
 }
 
-// ── Data Model ────────────────────────────────────────────────────────────────
+// ── Data Models ───────────────────────────────────────────────────────────────
+
+class _FeedSource {
+  final String name;
+  final String url;
+  final String category;
+  final Color color;
+  const _FeedSource({
+    required this.name,
+    required this.url,
+    required this.category,
+    required this.color,
+  });
+}
+
+class _LiveArticle {
+  final String title;
+  final String summary;
+  final String url;
+  final String source;
+  final String category;
+  final Color color;
+  final String pubDate;
+  const _LiveArticle({
+    required this.title,
+    required this.summary,
+    required this.url,
+    required this.source,
+    required this.category,
+    required this.color,
+    required this.pubDate,
+  });
+}
 
 class _Article {
   final String title;
@@ -906,7 +1027,6 @@ class _Article {
   final String readTime;
   final String content;
   final String url;
-
   const _Article({
     required this.title,
     required this.category,

@@ -250,8 +250,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       int low = 0, mod = 0, high = 0;
       for (final doc in assessmentsSnap.docs) {
         final risk = ((doc.data()['riskLevel'] as String?) ?? '').toLowerCase();
-        if (risk.contains('low')) low++;
-        else if (risk.contains('high')) high++;
+        if (risk.contains('low')) {
+          low++;
+        } else if (risk.contains('high')) high++;
         else mod++;
       }
       buffer.writeln('SUMMARY');

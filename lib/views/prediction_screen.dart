@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'ml_service.dart';
 
 class PredictionScreen extends StatefulWidget {
   const PredictionScreen({super.key});
@@ -90,12 +91,25 @@ class _PredictionScreenState extends State<PredictionScreen> {
     );
   }
 
-  // ✅ FIREBASE SAVE ─────────────────────────────────────────────────────────
+  // ✅ FIREBASE SAVE + ML PREDICTION ─────────────────────────────────────────
   Future<void> _submitPrediction() async {
     setState(() => _isLoading = true);
 
     try {
-      final double riskScore = _calculateRisk();
+      // ── ML Model prediction — replaces _calculateRisk() ───────────────────
+      final double riskScore = await MLService.predict(
+        age:                    _age,
+        bmi:                    _bmi,
+        familyHistory:          _familyHistory  ?? false,
+        hadBiopsy:              _hadBiopsy      ?? false,
+        breastfeeding:          _breastfeeding  ?? false,
+        hormonalContraceptives: _hormonalContraceptives ?? false,
+        smoking:                _smoking  ?? 'No',
+        alcohol:                _alcohol  ?? 'None',
+        exercise:               _exercise ?? 'None',
+        diet:                   _diet     ?? 'Average',
+      );
+
       final String riskLevel = riskScore < 0.25
           ? 'Low Risk'
           : riskScore < 0.55
@@ -173,32 +187,6 @@ class _PredictionScreenState extends State<PredictionScreen> {
     }
   }
 
-  double _calculateRisk() {
-    double score = 0.0;
-    if (_age >= 50) {
-      score += 0.20;
-    } else if (_age >= 40) score += 0.12;
-    else if (_age >= 30) score += 0.06;
-    if (_bmi >= 30) {
-      score += 0.15;
-    } else if (_bmi >= 25) score += 0.08;
-    if (_familyHistory == true) score += 0.20;
-    if (_hadBiopsy == true) score += 0.10;
-    if (_breastfeeding == false) score += 0.05;
-    if (_hormonalContraceptives == true) score += 0.08;
-    if (_smoking == 'Yes') score += 0.10;
-    if (_alcohol == 'Heavy') {
-      score += 0.12;
-    } else if (_alcohol == 'Moderate') score += 0.06;
-    if (_exercise == 'None') {
-      score += 0.10;
-    } else if (_exercise == 'Light') score += 0.05;
-    if (_diet == 'Poor') {
-      score += 0.08;
-    } else if (_diet == 'Average') score += 0.04;
-    return score.clamp(0.0, 1.0);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -248,7 +236,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
                         decoration: BoxDecoration(
                           color: i <= _currentStep
                               ? Colors.white
-                              : Colors.white.withValues(alpha: .3),
+                              : Colors.white.withOpacity(0.3),
                           borderRadius: BorderRadius.circular(3),
                         ),
                       ),
@@ -391,9 +379,9 @@ class _PredictionScreenState extends State<PredictionScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFE91E8C).withValues(alpha: .05),
+              color: const Color(0xFFE91E8C).withOpacity(0.05),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE91E8C).withValues(alpha:0.2)),
+              border: Border.all(color: const Color(0xFFE91E8C).withOpacity(0.2)),
             ),
             child: const Row(
               children: [
@@ -531,7 +519,7 @@ class _StepHeader extends StatelessWidget {
         Container(
           width: 48, height: 48,
           decoration: BoxDecoration(
-            color: const Color(0xFFE91E8C).withValues(alpha: .1),
+            color: const Color(0xFFE91E8C).withOpacity(0.1),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Icon(icon, color: const Color(0xFFE91E8C), size: 24),
@@ -579,7 +567,7 @@ class _SliderCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha:.08), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 8)],
       ),
       child: Column(
         children: [
@@ -590,7 +578,7 @@ class _SliderCard extends StatelessWidget {
                 Container(
                   width: 36, height: 36,
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha:0.1),
+                    color: color.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(icon, color: color, size: 18),
@@ -644,8 +632,8 @@ class _YesNoCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: value != null ? Border.all(color: color.withValues(alpha:0.4), width: 1.5) : null,
-        boxShadow: [BoxShadow(color: Colors.grey.withValues( alpha:.07), blurRadius: 8)],
+        border: value != null ? Border.all(color: color.withOpacity(0.4), width: 1.5) : null,
+        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.07), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -656,7 +644,7 @@ class _YesNoCard extends StatelessWidget {
               Container(
                 width: 34, height: 34,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha:0.1),
+                  color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: color, size: 18),
@@ -723,8 +711,8 @@ class _ChoiceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: selected != null ? Border.all(color: color.withValues(alpha:0.4), width: 1.5) : null,
-        boxShadow: [BoxShadow(color: Colors.grey.withValues(alpha:0.07), blurRadius: 8)],
+        border: selected != null ? Border.all(color: color.withOpacity(0.4), width: 1.5) : null,
+        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.07), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,7 +723,7 @@ class _ChoiceCard extends StatelessWidget {
               Container(
                 width: 34, height: 34,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha:0.1),
+                  color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: color, size: 18),
