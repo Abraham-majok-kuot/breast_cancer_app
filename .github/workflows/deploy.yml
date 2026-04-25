@@ -11,6 +11,7 @@ jobs:
 
     steps:
       # 1. Checkout code
+      #repos made public for testing purposes, so no secrets are needed. In a private repo, you would need to set up secrets for the Firebase token and app ID.
       - name: Checkout repository
         uses: actions/checkout@v3
 
