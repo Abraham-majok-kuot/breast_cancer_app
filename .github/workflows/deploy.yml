@@ -23,7 +23,7 @@ jobs:
           distribution: 'temurin'
 
       # 3. Set up Flutter
-      #fixes for workflow
+      #fixes for workflows
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
