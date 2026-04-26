@@ -11,7 +11,6 @@ jobs:
 
     steps:
       # 1. Checkout code
-      #repos made public for testing purposes, so no secrets are needed. In a private repo, you would need to set up secrets for the Firebase token and app ID.
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -23,7 +22,6 @@ jobs:
           distribution: 'temurin'
 
       # 3. Set up Flutter
-      #fixes for workflows
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -33,16 +31,31 @@ jobs:
       # 4. Install dependencies
       - name: Install dependencies
         run: flutter pub get
-        # Decode google-services.json
-      - name: Decode google-services.json
-        run: |
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > android/app/google-services.json
 
-      # 5. Build release APK
+      # 5. Decode and validate google-services.json from secret
+      - name: Decode google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "ERROR: GOOGLE_SERVICES_JSON secret is not set."
+            echo "Go to: GitHub repo → Settings → Secrets → Actions → New secret"
+            echo "Name:  GOOGLE_SERVICES_JSON"
+            echo "Value: base64-encoded content of your android/app/google-services.json"
+            echo "Run this locally to get the value:  base64 -w 0 android/app/google-services.json"
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
+          # Validate the decoded file is well-formed JSON
+          python3 -c "import json,sys; json.load(open('android/app/google-services.json'))" \
+            && echo "google-services.json is valid JSON" \
+            || { echo "ERROR: Decoded google-services.json is malformed. Re-encode the file."; exit 1; }
+
+      # 6. Build release APK
       - name: Build APK
         run: flutter build apk --release
 
-      # 6. Upload to Firebase App Distribution
+      # 7. Upload to Firebase App Distribution
       - name: Upload to Firebase App Distribution
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
